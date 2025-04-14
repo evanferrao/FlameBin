@@ -55,6 +55,8 @@ html, body, #root {
   white-space: nowrap;
   color: inherit; 
   background-color: #444; 
+  min-width: 65px;
+  text-align: center;
 }
 .show-hide-button:hover {
   border-color: #646cff; 
