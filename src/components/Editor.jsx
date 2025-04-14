@@ -5,7 +5,7 @@ import { javascript } from "@codemirror/lang-javascript";
 import { oneDark } from "@codemirror/theme-one-dark";
 import "./Editor.css";
 import { db } from "../firebase";
-import { doc, getDoc, setDoc, deleteDoc, serverTimestamp,} from "firebase/firestore";
+import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 
 const Editor = () => {
   const { id } = useParams();
@@ -16,6 +16,10 @@ const Editor = () => {
   const [originalId, setOriginalId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [password, setPassword] = useState("");
+  const [savedPassword, setSavedPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
 
   useEffect(() => {
     const fetchPaste = async () => {
@@ -26,6 +30,10 @@ const Editor = () => {
           setCode(docSnap.data().content);
           setCustomId(id);
           setOriginalId(id);
+          // Save the password for later verification but don't show it
+          if (docSnap.data().password) {
+            setSavedPassword(docSnap.data().password);
+          }
         } else {
           setMessage("Paste not found.");
         }
@@ -33,6 +41,15 @@ const Editor = () => {
     };
     fetchPaste();
   }, [id]);
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < 8; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
 
   const savePaste = async () => {
     if (!customId.trim()) {
@@ -42,20 +59,26 @@ const Editor = () => {
 
     setLoading(true);
     setMessage("");
-
+    
+    // Use provided password or generate a random one
+    const pastePassword = password.trim() || generateRandomPassword();
+    
     const newRef = doc(db, "pastes", customId);
     const newData = {
       content: code,
       updatedAt: serverTimestamp(),
+      password: pastePassword
     };
 
     try {
       await setDoc(newRef, newData);
-      setMessage(`Saved as /${customId}`);
+      
+      setMessage(`Saved as /${customId} with password: ${pastePassword}`);
       
       if (!id) {
         navigate(`/${customId}`);
         setOriginalId(customId);
+        setSavedPassword(pastePassword);
       }
     } catch (err) {
       console.error(err);
@@ -73,6 +96,11 @@ const Editor = () => {
       return;
     }
 
+    if (passwordInput !== savedPassword) {
+      setMessage("Incorrect password. Please try again.");
+      return;
+    }
+
     setLoading(true);
     setMessage("");
 
@@ -80,6 +108,7 @@ const Editor = () => {
     const newData = {
       content: code,
       updatedAt: serverTimestamp(),
+      password: savedPassword
     };
 
     try {
@@ -96,6 +125,32 @@ const Editor = () => {
     }
   };
 
+  const updateWithPassword = async () => {
+    if (passwordInput !== savedPassword) {
+      setMessage("Incorrect password. Please try again.");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    const docRef = doc(db, "pastes", originalId);
+    const updateData = {
+      content: code,
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      await setDoc(docRef, updateData, { merge: true });
+      setMessage("Paste updated successfully.");
+    } catch (err) {
+      console.error(err);
+      setMessage("Error updating paste.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="editor-container">
       <CodeMirror
@@ -106,35 +161,83 @@ const Editor = () => {
         onChange={(value) => setCode(value)}
       />
 
-      <input
-        type="text"
-        placeholder="Custom link name (e.g., my-snippet)"
-        value={customId}
-        onChange={(e) => setCustomId(e.target.value)}
-        style={{ marginTop: "10px", padding: "8px", width: "100%" }}
-      />
-
-      <div style={{ marginTop: "10px", display: "flex", gap: "10px" }}>
-        <button 
-          onClick={savePaste} 
-          disabled={loading}
-          style={{ flex: 1 }}
-        >
-          {loading ? "Saving..." : "Save"}
-        </button>
+      <div className="input-row">
+        <input
+          type="text"
+          placeholder="Custom link name (e.g., my-snippet)"
+          value={customId}
+          onChange={(e) => setCustomId(e.target.value)}
+          className="custom-id-input" 
+        />
+        
+        {!originalId && (
+          <div className="password-wrapper"> 
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="Password (optional)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="password-input" 
+            />
+            <button 
+              onClick={() => setShowPassword(!showPassword)}
+              className="show-hide-button" 
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
+        )}
 
         {originalId && (
-          <button 
-            onClick={renamePaste} 
-            disabled={loading || customId === originalId}
-            style={{ flex: 1 }}
-          >
-            {loading ? "Renaming..." : "Rename"}
-          </button>
+          <div className="password-wrapper"> 
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="Enter paste password"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              className="password-input"
+            />
+            <button 
+              onClick={() => setShowPassword(!showPassword)}
+              className="show-hide-button" 
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
         )}
       </div>
 
-      {message && <p style={{ marginTop: "10px" }}>{message}</p>}
+      <div className="button-row"> 
+        {!originalId ? (
+          <button 
+            onClick={savePaste} 
+            disabled={loading || !customId.trim()}
+            className="action-button" 
+          >
+            {loading ? "Saving..." : "Save New Paste"}
+          </button>
+        ) : (
+          <>
+            <button 
+              onClick={updateWithPassword} 
+              disabled={loading || !passwordInput}
+              className="action-button" 
+            >
+              {loading ? "Updating..." : "Update Paste"}
+            </button>
+            
+            <button 
+              onClick={renamePaste} 
+              disabled={loading || customId === originalId || !passwordInput}
+              className="action-button" 
+            >
+              {loading ? "Renaming..." : "Rename Paste"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {message && <p className="message-text">{message}</p>} 
     </div>
   );
 };
