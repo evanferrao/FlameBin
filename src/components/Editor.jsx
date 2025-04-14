@@ -4,15 +4,8 @@ import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { oneDark } from "@codemirror/theme-one-dark";
 import "./Editor.css";
-
 import { db } from "../firebase";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  deleteDoc,
-  serverTimestamp,
-} from "firebase/firestore";
+import { doc, getDoc, setDoc, deleteDoc, serverTimestamp,} from "firebase/firestore";
 
 const Editor = () => {
   const { id } = useParams();
@@ -20,7 +13,7 @@ const Editor = () => {
 
   const [code, setCode] = useState("// start typing here");
   const [customId, setCustomId] = useState("");
-  const [originalId, setOriginalId] = useState(null); // tracks current doc
+  const [originalId, setOriginalId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -34,7 +27,7 @@ const Editor = () => {
           setCustomId(id);
           setOriginalId(id);
         } else {
-          setMessage("❌ Paste not found.");
+          setMessage("Paste not found.");
         }
       }
     };
@@ -43,7 +36,7 @@ const Editor = () => {
 
   const savePaste = async () => {
     if (!customId.trim()) {
-      setMessage("❗ Please enter a custom ID.");
+      setMessage("Please enter a custom ID.");
       return;
     }
 
@@ -58,20 +51,46 @@ const Editor = () => {
 
     try {
       await setDoc(newRef, newData);
-
-      // If renaming: delete old one
-      if (originalId && originalId !== customId) {
-        await deleteDoc(doc(db, "pastes", originalId));
-        setMessage(`✅ Paste renamed to /${customId}`);
-        navigate(`/${customId}`, { replace: true });
+      setMessage(`Saved as /${customId}`);
+      
+      if (!id) {
+        navigate(`/${customId}`);
         setOriginalId(customId);
-      } else {
-        setMessage(`✅ Saved as /${customId}`);
-        if (!id) navigate(`/${customId}`);
       }
     } catch (err) {
       console.error(err);
-      setMessage("❌ Error saving paste.");
+      setMessage("Error saving paste.");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const renamePaste = async () => {
+    if (!customId.trim() || !originalId || customId === originalId) {
+      setMessage(customId === originalId 
+        ? "Please use a different name to rename" 
+        : "Please enter a valid name");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    const newRef = doc(db, "pastes", customId);
+    const newData = {
+      content: code,
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      await setDoc(newRef, newData);
+      await deleteDoc(doc(db, "pastes", originalId));
+      setMessage(`Paste renamed to /${customId}`);
+      navigate(`/${customId}`, { replace: true });
+      setOriginalId(customId);
+    } catch (err) {
+      console.error(err);
+      setMessage("Error renaming paste.");
     } finally {
       setLoading(false);
     }
@@ -95,9 +114,25 @@ const Editor = () => {
         style={{ marginTop: "10px", padding: "8px", width: "100%" }}
       />
 
-      <button onClick={savePaste} disabled={loading} style={{ marginTop: "10px" }}>
-        {loading ? "Saving..." : "💾 Save / Rename"}
-      </button>
+      <div style={{ marginTop: "10px", display: "flex", gap: "10px" }}>
+        <button 
+          onClick={savePaste} 
+          disabled={loading}
+          style={{ flex: 1 }}
+        >
+          {loading ? "Saving..." : "Save"}
+        </button>
+
+        {originalId && (
+          <button 
+            onClick={renamePaste} 
+            disabled={loading || customId === originalId}
+            style={{ flex: 1 }}
+          >
+            {loading ? "Renaming..." : "Rename"}
+          </button>
+        )}
+      </div>
 
       {message && <p style={{ marginTop: "10px" }}>{message}</p>}
     </div>
